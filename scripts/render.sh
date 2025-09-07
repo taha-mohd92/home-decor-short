@@ -18,7 +18,7 @@ FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 WATERMARK_DEFAULT="@begumhomedecor"
 WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
 # Escape single quotes for ffmpeg drawtext
-WATERMARK_ESC="${WATERMARK//\'/\'}"
+WATERMARK_ESC="${WATERMARK//\'/\\'}"
 
 # Timeline (seconds)
 HOOK_D=3.0
@@ -71,8 +71,8 @@ make_slide () {
   local outfile="$5"
 
   # Escape single quotes for ffmpeg drawtext
-  text1="${text1//\'/\'}"
-  text2="${text2//\'/\'}"
+  text1="${text1//\'/\\'}"
+  text2="${text2//\'/\\'}"
 
   local f1=""
   local f2=""
@@ -81,13 +81,13 @@ make_slide () {
 
   local line1
   if [[ -n "$f1" ]]; then
-    line1="drawtext="">$f1:text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
+    line1="drawtext=$f1:text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
   else
     line1="drawtext=text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
   fi
 
   local line2=""
-  if [[ -n "$text2" ]]; then
+  if [[ -n "${text2}" ]]; then
     if [[ -n "$f2" ]]; then
       line2=",drawtext=${f2}:text='${text2}':fontsize=54:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-28):borderw=2:bordercolor=white@0.8"
     else
@@ -137,9 +137,18 @@ if [[ -f "assets/music.mp3" ]]; then
   if [[ -z "${DURATION}" || "${DURATION}" == "0" ]]; then
     err "Could not determine video duration, skipping music mixing."
   else
-    ffmpeg -y -stream_loop -1 -i assets/music.mp3 -t "${DURATION}" -i "${OUT_DIR}/home-decor-short-temp.mp4" \
-      -filter_complex "[0:a]volume=0.20,lowpass=f=1400,highpass=f=60[a0];[1:a][a0]amix=inputs=2:duration=shortest:dropout_transition=2,volume=1.0[aout]" \
-      -map 1:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 160k "${OUT_DIR}/home-decor-short.mp4"
+    # Check whether the temp video has an audio stream
+    has_audio=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "")
+    if [[ -n "${has_audio}" ]]; then
+      # Video has audio -> mix music with video audio
+      ffmpeg -y -stream_loop -1 -i assets/music.mp3 -t "${DURATION}" -i "${OUT_DIR}/home-decor-short-temp.mp4" \
+        -filter_complex "[0:a]volume=0.20,lowpass=f=1400,highpass=f=60[a0];[1:a]volume=1.0[a1];[a1][a0]amix=inputs=2:duration=shortest:dropout_transition=2[aout]" \
+        -map 1:v -map "[aout]" -c:v copy -c:a aac -b:a 160k "${OUT_DIR}/home-decor-short.mp4"
+    else
+      # Video has no audio -> use music as the sole audio track
+      ffmpeg -y -stream_loop -1 -i assets/music.mp3 -t "${DURATION}" -i "${OUT_DIR}/home-decor-short-temp.mp4" \
+        -map 1:v -map 0:a -c:v copy -c:a aac -b:a 160k -shortest "${OUT_DIR}/home-decor-short.mp4"
+    fi
   fi
 else
   ffmpeg -y -i "${OUT_DIR}/home-decor-short-temp.mp4" -f lavfi -t 0.1 -i anullsrc=r=48000:cl=stereo -shortest \
