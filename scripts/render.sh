@@ -11,7 +11,7 @@ FONT_REG="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Watermark
-WATERMARK_DEFAULT="@taha_home"
+WATERMARK_DEFAULT="@begumhomedecor"
 WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
 
 # Timeline (seconds)
