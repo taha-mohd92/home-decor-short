@@ -20,12 +20,19 @@ jobs:
     - name: Install ffmpeg
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg ffprobe
+        sudo apt-get install -y ffmpeg
         
     - name: Verify ffmpeg installation
       run: |
         ffmpeg -version
         ffprobe -version
+        
+    - name: Prepare fallback music (if assets/music.mp3 is missing)
+      run: |
+        mkdir -p assets
+        if [ ! -f assets/music.mp3 ]; then
+          ffmpeg -y -f lavfi -i "sine=frequency=480:duration=60,volume=0.2" -c:a libmp3lame -q:a 6 assets/music.mp3
+        fi
         
     - name: Make render script executable
       run: chmod +x scripts/render.sh
@@ -60,6 +67,7 @@ jobs:
         name: youtube-short-captions
         path: captions/
         retention-days: 30
+        if-no-files-found: warn
         
     - name: Upload metadata
       uses: actions/upload-artifact@v4
@@ -70,3 +78,4 @@ jobs:
           metadata/description.txt
           metadata/hashtags.txt
         retention-days: 30
+        if-no-files-found: warn
