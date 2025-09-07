@@ -31,7 +31,7 @@ ACC="#CBB59B"  # accent bar
 fade_in="fade=t=in:st=0:d=0.35"
 # fade out starts 0.35s before end; computed per slide
 
-draw_watermark="drawtext=fontfile=",${FONT_BOLD}":text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
+draw_watermark="drawtext=fontfile=${FONT_BOLD}:text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
 
 make_slide () {
   local text1="$1"
