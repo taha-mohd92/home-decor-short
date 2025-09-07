@@ -12,7 +12,8 @@ FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Watermark
 WATERMARK_DEFAULT="@begumhomedecor"
-WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
+WATERMARK="");
+WATERMARK_ESC="${WATERMARK//\'/\'}"
 
 # Timeline (seconds)
 HOOK_D=3.0
@@ -29,7 +30,7 @@ ACC="#CBB59B"  # accent bar
 fade_in="fade=t=in:st=0:d=0.35"
 # fade out starts 0.35s before end; computed per slide
 
-draw_watermark="drawtext=fontfile=${FONT_BOLD}:text='${WATERMARK}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
+draw_watermark="drawtext=fontfile=${FONT_BOLD}:text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
 
 make_slide () {
   local text1="$1"
@@ -39,8 +40,8 @@ make_slide () {
   local outfile="$5"
 
   # Escape single quotes for ffmpeg drawtext
-  text1="${text1//\'/\\'}"
-  text2="${text2//\'/\\'}"
+  text1="${text1//\'/\'}"
+  text2="${text2//\'/\'}"
 
   # Build drawtext filters for lines (centered)
   local line1="drawtext=fontfile=${FONT_BOLD}:text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
