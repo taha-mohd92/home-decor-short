@@ -17,8 +17,8 @@ FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 # Watermark
 WATERMARK_DEFAULT="@begumhomedecor"
 WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
-# Escape single quotes for ffmpeg drawtext  
-WATERMARK_ESC="$(echo "$WATERMARK" | sed "s/'/\\\\'/g")"
+# Escape single quotes for ffmpeg drawtext
+WATERMARK_ESC="${WATERMARK//\'/\\'}"
 
 # Timeline (seconds)
 HOOK_D=3.0
@@ -71,8 +71,8 @@ make_slide () {
   local outfile="$5"
 
   # Escape single quotes for ffmpeg drawtext
-  text1="$(echo "$text1" | sed "s/'/\\\\'/g")"
-  text2="$(echo "$text2" | sed "s/'/\\\\'/g")"
+  text1="${text1//\'/\\'}"
+  text2="${text2//\'/\\'}"
 
   local f1=""
   local f2=""
@@ -100,7 +100,7 @@ make_slide () {
   st=$(awk -v d="$duration" 'BEGIN {printf "%.2f", d-0.35}')
   local fade_out="fade=t=out:st=${st}:d=0.35"
 
-  echo "Generating slide: ${outfile} duration=${duration} bg=${bg}"
+  echo "Generating slide: ${outfile} [duration=${duration}, bg=${bg}]"
   ffmpeg -y -f lavfi -i "color=c=${bg}:s=1080x1920:d=${duration}:r=${FPS}" \
     -vf "${line1}${line2},${bar},${draw_watermark},${fade_in},${fade_out}" \
     -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${outfile}"
