@@ -1,8 +1,3 @@
-# backup current file
-cp scripts/render.sh scripts/render.sh.bak
-
-# overwrite with a cleaned script (this heredoc is safe; it writes LF line endings)
-cat > scripts/render.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 set -x
@@ -128,56 +123,3 @@ file '${PWD}/${OUT_DIR}/s4.mp4'
 file '${PWD}/${OUT_DIR}/s5.mp4'
 file '${PWD}/${OUT_DIR}/s6.mp4'
 file '${PWD}/${OUT_DIR}/s7.mp4'
-EOF
-
-echo "Concatenating slides (fast copy)..." >>"$FFLOG"
-if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/home-decor-short-temp.mp4"; then
-  echo "Fast concat failed; falling back to re-encode concat (this is slower)..." >>"$FFLOG"
-  run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${OUT_DIR}/home-decor-short-temp.mp4"
-fi
-
-if [ -f "assets/music.mp3" ]; then
-  echo "Mixing in background music..." >>"$FFLOG"
-  DURATION=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "0")
-  if [ -z "${DURATION}" ] || [ "${DURATION}" = "0" ]; then
-    err "Could not determine video duration, skipping music mixing."
-    run_ff -y -i "${OUT_DIR}/home-decor-short-temp.mp4" -f lavfi -t 0.1 -i anullsrc=r=48000:cl=stereo -shortest -c:v copy -c:a aac -b:a 128k "${OUT_DIR}/home-decor-short.mp4"
-  else
-    has_audio=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "")
-    if [ -n "${has_audio}" ]; then
-      run_ff -y -stream_loop -1 -i assets/music.mp3 -t "${DURATION}" -i "${OUT_DIR}/home-decor-short-temp.mp4" \
-        -filter_complex "[0:a]volume=0.20,lowpass=f=1400,highpass=f=60[a0];[1:a]volume=1.0[a1];[a1][a0]amix=inputs=2:duration=shortest:dropout_transition=2[aout]" \
-        -map 1:v -map "[aout]" -c:v copy -c:a aac -b:a 160k "${OUT_DIR}/home-decor-short.mp4"
-    else
-      run_ff -y -stream_loop -1 -i assets/music.mp3 -t "${DURATION}" -i "${OUT_DIR}/home-decor-short-temp.mp4" \
-        -map 1:v -map 0:a -c:v copy -c:a aac -b:a 160k -shortest "${OUT_DIR}/home-decor-short.mp4"
-    fi
-  fi
-else
-  run_ff -y -i "${OUT_DIR}/home-decor-short-temp.mp4" -f lavfi -t 0.1 -i anullsrc=r=48000:cl=stereo -shortest \
-    -c:v copy -c:a aac -b:a 128k "${OUT_DIR}/home-decor-short.mp4"
-fi
-
-VIDEO_DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short.mp4" || echo "0")
-THUMB_TIME="00:00:00"
-if [ -n "${VIDEO_DUR}" ] && [ "${VIDEO_DUR}" != "0" ]; then
-  safe=$(awk -v d="${VIDEO_DUR}" 'BEGIN{t=d-2; if(t<0.5) t=0; printf "%d\n", t}')
-  THUMB_TIME=$(printf "00:00:%02d" "$safe")
-fi
-
-run_ff -y -ss "${THUMB_TIME}" -i "${OUT_DIR}/home-decor-short.mp4" -frames:v 1 "${OUT_DIR}/thumbnail.jpg"
-
-echo "Done. Outputs in ${OUT_DIR}." | tee -a "$FFLOG"
-echo "Last lines of ffmpeg log:" | tee -a "$FFLOG"
-tail -n 50 "$FFLOG" || true
-EOF
-
-# make executable and test
-chmod +x scripts/render.sh
-bash -n scripts/render.sh || true
-
-# create branch and push
-git checkout -b fix/render-script-clean
-git add scripts/render.sh
-git commit -m "Fix: replace render script with sanitized bash-first implementation"
-git push -u origin fix/render-script-clean

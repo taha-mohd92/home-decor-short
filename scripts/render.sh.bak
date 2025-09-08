@@ -1,59 +1,50 @@
+# backup current file
+cp scripts/render.sh scripts/render.sh.bak
+
+# overwrite with a cleaned script (this heredoc is safe; it writes LF line endings)
+cat > scripts/render.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 set -x
-
-# Robust render script for GitHub Actions
-# - Forces bash via shebang
-# - Avoids bash-only constructs in critical parsing spots
-# - Writes ffmpeg logs to out/ffmpeg.log
-# - Falls back from fast concat (-c copy) to re-encoding concat if needed
 
 OUT_DIR="out"
 mkdir -p "$OUT_DIR"
 mkdir -p "captions" "metadata" "assets"
 
-# Fonts (Ubuntu runner usually has these)
 FONT_REG="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# Watermark
 WATERMARK_DEFAULT="@begumhomedecor"
 WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
-# Escape single quotes for ffmpeg drawtext
 WATERMARK_ESC="${WATERMARK//\'/\\'}"
 
-# Timeline (seconds)
 HOOK_D=3.0
 TIP_D=4.8
 CTA_D=3.0
 FPS=30
 
-# Colors (hex or names)
-BG1="#F3F1ED"  # warm-neutral
-BG2="#ECE6DF"  # slightly warmer
-FG="#111111"   # text color (near-black)
-ACC="#CBB59B"  # accent bar
+BG1="#F3F1ED"
+BG2="#ECE6DF"
+FG="#111111"
+ACC="#CBB59B"
 
 fade_in="fade=t=in:st=0:d=0.35"
 
 err() { echo "ERROR: $*" >&2; }
 
-# Ensure ffmpeg/ffprobe are available
 if ! command -v ffmpeg >/dev/null 2>&1; then
   err "ffmpeg not found in PATH. Please install ffmpeg."
   exit 1
 fi
 if ! command -v ffprobe >/dev/null 2>&1; then
-  err "ffprobe not found in PATH. Please install ffprobe."
+  err "ffprobe not found in PATH. Please install ffmpeg/ffprobe."
   exit 1
 fi
 
-# Logging
 export FFREPORT="file=${OUT_DIR}/ffmpeg-report.log:level=32"
 FFLOG="${OUT_DIR}/ffmpeg.log"
 : >"$FFLOG"
 
-# Simple wrapper to run ffmpeg and append output to log file.
 run_ff() {
   echo "+ ffmpeg $*" >>"$FFLOG"
   ffmpeg -hide_banner -loglevel verbose "$@" >>"$FFLOG" 2>&1
@@ -65,7 +56,6 @@ run_ff() {
   return 0
 }
 
-# Font fallbacks
 if [ ! -f "${FONT_BOLD}" ]; then
   echo "Warning: bold font not found at ${FONT_BOLD}, letting ffmpeg pick default." | tee -a "$FFLOG"
   FONT_BOLD=""
@@ -81,7 +71,6 @@ else
   draw_watermark="drawtext=text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
 fi
 
-# make_slide: generate one slide mp4 with drawtext, bar, watermark and fades
 make_slide() {
   text1="$1"
   text2="$2"
@@ -89,7 +78,6 @@ make_slide() {
   bg="$4"
   outfile="$5"
 
-  # Escape single quotes
   text1="${text1//\'/\\'}"
   text2="${text2//\'/\\'}"
 
@@ -123,7 +111,6 @@ make_slide() {
     -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${outfile}"
 }
 
-# Main rendering steps
 echo "Generating slides..." >>"$FFLOG"
 make_slide "5 Tiny Decor Upgrades" "Under \$20" "${HOOK_D}" "${BG1}" "${OUT_DIR}/s1.mp4"
 make_slide "Swap pillow covers" "Texture = luxe" "${TIP_D}" "${BG2}" "${OUT_DIR}/s2.mp4"
@@ -133,7 +120,6 @@ make_slide "Matching frames" "Cohesive walls" "${TIP_D}" "${BG1}" "${OUT_DIR}/s5
 make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "${OUT_DIR}/s6.mp4"
 make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
 
-# Concat list: absolute paths
 cat >"${OUT_DIR}/inputs.txt" <<EOF
 file '${PWD}/${OUT_DIR}/s1.mp4'
 file '${PWD}/${OUT_DIR}/s2.mp4'
@@ -144,14 +130,12 @@ file '${PWD}/${OUT_DIR}/s6.mp4'
 file '${PWD}/${OUT_DIR}/s7.mp4'
 EOF
 
-# Try fast concat (copy). If it fails, fallback to re-encoding concat.
 echo "Concatenating slides (fast copy)..." >>"$FFLOG"
 if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/home-decor-short-temp.mp4"; then
   echo "Fast concat failed; falling back to re-encode concat (this is slower)..." >>"$FFLOG"
   run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${OUT_DIR}/home-decor-short-temp.mp4"
 fi
 
-# Optional music mixing
 if [ -f "assets/music.mp3" ]; then
   echo "Mixing in background music..." >>"$FFLOG"
   DURATION=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "0")
@@ -170,16 +154,13 @@ if [ -f "assets/music.mp3" ]; then
     fi
   fi
 else
-  # Ensure there is an audio stream (silent)
   run_ff -y -i "${OUT_DIR}/home-decor-short-temp.mp4" -f lavfi -t 0.1 -i anullsrc=r=48000:cl=stereo -shortest \
     -c:v copy -c:a aac -b:a 128k "${OUT_DIR}/home-decor-short.mp4"
 fi
 
-# Thumbnail near the end - portable, avoid printf -v and [[ ]]
 VIDEO_DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short.mp4" || echo "0")
 THUMB_TIME="00:00:00"
 if [ -n "${VIDEO_DUR}" ] && [ "${VIDEO_DUR}" != "0" ]; then
-  # choose 2s before end or 1s if shorter
   safe=$(awk -v d="${VIDEO_DUR}" 'BEGIN{t=d-2; if(t<0.5) t=0; printf "%d\n", t}')
   THUMB_TIME=$(printf "00:00:%02d" "$safe")
 fi
@@ -189,3 +170,14 @@ run_ff -y -ss "${THUMB_TIME}" -i "${OUT_DIR}/home-decor-short.mp4" -frames:v 1 "
 echo "Done. Outputs in ${OUT_DIR}." | tee -a "$FFLOG"
 echo "Last lines of ffmpeg log:" | tee -a "$FFLOG"
 tail -n 50 "$FFLOG" || true
+EOF
+
+# make executable and test
+chmod +x scripts/render.sh
+bash -n scripts/render.sh || true
+
+# create branch and push
+git checkout -b fix/render-script-clean
+git add scripts/render.sh
+git commit -m "Fix: replace render script with sanitized bash-first implementation"
+git push -u origin fix/render-script-clean
