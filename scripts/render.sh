@@ -2,11 +2,11 @@
 set -euo pipefail
 set -x
 
-# Simple, robust render script for GitHub Actions
-# - forces bash via shebang
-# - avoids bash-only arrays/PIPESTATUS in pipelines
-# - logs ffmpeg output to out/ffmpeg.log
-# - falls back from fast concat (-c copy) to re-encoding concat if needed
+# Robust render script for GitHub Actions
+# - Forces bash via shebang
+# - Avoids bash-only constructs in critical parsing spots
+# - Writes ffmpeg logs to out/ffmpeg.log
+# - Falls back from fast concat (-c copy) to re-encoding concat if needed
 
 OUT_DIR="out"
 mkdir -p "$OUT_DIR"
@@ -44,20 +44,18 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 1
 fi
 if ! command -v ffprobe >/dev/null 2>&1; then
-  err "ffprobe not found in PATH. Please install ffmpeg/ffprobe."
+  err "ffprobe not found in PATH. Please install ffprobe."
   exit 1
 fi
 
 # Logging
 export FFREPORT="file=${OUT_DIR}/ffmpeg-report.log:level=32"
 FFLOG="${OUT_DIR}/ffmpeg.log"
-: > "$FFLOG"
+: >"$FFLOG"
 
 # Simple wrapper to run ffmpeg and append output to log file.
-# Avoids piping into tee so we don't rely on PIPESTATUS.
 run_ff() {
-  echo "+ ffmpeg $*" >> "$FFLOG"
-  # Run ffmpeg, append stdout+stderr to log, capture exit code
+  echo "+ ffmpeg $*" >>"$FFLOG"
   ffmpeg -hide_banner -loglevel verbose "$@" >>"$FFLOG" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
@@ -119,14 +117,14 @@ make_slide() {
   st=$(awk -v d="$duration" 'BEGIN {printf "%.2f", d-0.35}')
   fade_out="fade=t=out:st=${st}:d=0.35"
 
-  echo "Generating slide: ${outfile} (duration=${duration}, bg=${bg})" >> "$FFLOG"
+  echo "Generating slide: ${outfile} (duration=${duration}, bg=${bg})" >>"$FFLOG"
   run_ff -y -f lavfi -i "color=c=${bg}:s=1080x1920:d=${duration}:r=${FPS}" \
     -vf "${line1}${line2},${bar},${draw_watermark},${fade_in},${fade_out}" \
     -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${outfile}"
 }
 
 # Main rendering steps
-echo "Generating slides..." >> "$FFLOG"
+echo "Generating slides..." >>"$FFLOG"
 make_slide "5 Tiny Decor Upgrades" "Under \$20" "${HOOK_D}" "${BG1}" "${OUT_DIR}/s1.mp4"
 make_slide "Swap pillow covers" "Texture = luxe" "${TIP_D}" "${BG2}" "${OUT_DIR}/s2.mp4"
 make_slide "Warm LED strips" "Ambient glow" "${TIP_D}" "${BG1}" "${OUT_DIR}/s3.mp4"
@@ -136,7 +134,7 @@ make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "$
 make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
 
 # Concat list: absolute paths
-cat > "${OUT_DIR}/inputs.txt" <<EOF
+cat >"${OUT_DIR}/inputs.txt" <<EOF
 file '${PWD}/${OUT_DIR}/s1.mp4'
 file '${PWD}/${OUT_DIR}/s2.mp4'
 file '${PWD}/${OUT_DIR}/s3.mp4'
@@ -147,15 +145,15 @@ file '${PWD}/${OUT_DIR}/s7.mp4'
 EOF
 
 # Try fast concat (copy). If it fails, fallback to re-encoding concat.
-echo "Concatenating slides (fast copy)..." >> "$FFLOG"
+echo "Concatenating slides (fast copy)..." >>"$FFLOG"
 if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/home-decor-short-temp.mp4"; then
-  echo "Fast concat failed; falling back to re-encode concat (this is slower)..." >> "$FFLOG"
+  echo "Fast concat failed; falling back to re-encode concat (this is slower)..." >>"$FFLOG"
   run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${OUT_DIR}/home-decor-short-temp.mp4"
 fi
 
 # Optional music mixing
 if [ -f "assets/music.mp3" ]; then
-  echo "Mixing in background music..." >> "$FFLOG"
+  echo "Mixing in background music..." >>"$FFLOG"
   DURATION=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "0")
   if [ -z "${DURATION}" ] || [ "${DURATION}" = "0" ]; then
     err "Could not determine video duration, skipping music mixing."
@@ -177,15 +175,17 @@ else
     -c:v copy -c:a aac -b:a 128k "${OUT_DIR}/home-decor-short.mp4"
 fi
 
-# Thumbnail near the end
+# Thumbnail near the end - portable, avoid printf -v and [[ ]]
 VIDEO_DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short.mp4" || echo "0")
 THUMB_TIME="00:00:00"
 if [ -n "${VIDEO_DUR}" ] && [ "${VIDEO_DUR}" != "0" ]; then
-  safe=$(awk -v d="${VIDEO_DUR}" 'BEGIN{t=d-2; if(t<0.5) t=0; printf "%d", t}')
-  printf -v THUMB_TIME "00:00:%02d" "$safe"
+  # choose 2s before end or 1s if shorter
+  safe=$(awk -v d="${VIDEO_DUR}" 'BEGIN{t=d-2; if(t<0.5) t=0; printf "%d\n", t}')
+  THUMB_TIME=$(printf "00:00:%02d" "$safe")
 fi
+
 run_ff -y -ss "${THUMB_TIME}" -i "${OUT_DIR}/home-decor-short.mp4" -frames:v 1 "${OUT_DIR}/thumbnail.jpg"
 
-echo "Done. Outputs in ${OUT_DIR}."
-echo "Last lines of ffmpeg log:"
+echo "Done. Outputs in ${OUT_DIR}." | tee -a "$FFLOG"
+echo "Last lines of ffmpeg log:" | tee -a "$FFLOG"
 tail -n 50 "$FFLOG" || true
