@@ -1,7 +1,0 @@
-# Add this to the job that runs your script (after the render step completes)
-- name: Upload generated videos and logs
-  uses: actions/upload-artifact@v4
-  with:
-    name: out
-    path: out/**
-    retention-days: 7
