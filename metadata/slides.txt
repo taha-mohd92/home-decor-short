@@ -1,0 +1,8 @@
+# Format: title|subtitle|duration_secs|bg_color
+5 Tiny Decor Upgrades|Under $20|3.0|#F3F1ED
+Swap pillow covers|Texture = luxe|4.8|#ECE6DF
+Warm LED strips|Ambient glow|4.8|#F3F1ED
+Coffee table: Rule of 3|Book + Candle + Vase|4.8|#ECE6DF
+Matching frames|Cohesive walls|4.8|#F3F1ED
+Greenery in a matte vase|Finishes the look|4.8|#ECE6DF
+Follow for quick home glow-ups!||3.0|#F3F1ED

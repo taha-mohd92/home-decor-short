@@ -1,11 +1,11 @@
-# backup current file
-cp scripts/render.sh scripts/render.sh.bak
-
-# overwrite with a cleaned script (this heredoc is safe; it writes LF line endings)
-cat > scripts/render.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 set -x
+
+# Render script for home-decor-short
+# - CI-safe: no git operations performed here
+# - If metadata/slides.txt exists, slides are read from it (format below)
+# - Otherwise, falls back to built-in slides
 
 OUT_DIR="out"
 mkdir -p "$OUT_DIR"
@@ -71,6 +71,7 @@ else
   draw_watermark="drawtext=text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
 fi
 
+# make_slide: generates a single slide
 make_slide() {
   text1="$1"
   text2="$2"
@@ -78,6 +79,7 @@ make_slide() {
   bg="$4"
   outfile="$5"
 
+  # Escape single quotes
   text1="${text1//\'/\\'}"
   text2="${text2//\'/\\'}"
 
@@ -111,23 +113,48 @@ make_slide() {
     -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${outfile}"
 }
 
-echo "Generating slides..." >>"$FFLOG"
-make_slide "5 Tiny Decor Upgrades" "Under \$20" "${HOOK_D}" "${BG1}" "${OUT_DIR}/s1.mp4"
-make_slide "Swap pillow covers" "Texture = luxe" "${TIP_D}" "${BG2}" "${OUT_DIR}/s2.mp4"
-make_slide "Warm LED strips" "Ambient glow" "${TIP_D}" "${BG1}" "${OUT_DIR}/s3.mp4"
-make_slide "Coffee table: Rule of 3" "Book + Candle + Vase" "${TIP_D}" "${BG2}" "${OUT_DIR}/s4.mp4"
-make_slide "Matching frames" "Cohesive walls" "${TIP_D}" "${BG1}" "${OUT_DIR}/s5.mp4"
-make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "${OUT_DIR}/s6.mp4"
-make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
+# If metadata/slides.txt exists, read slide definitions from it.
+# slides.txt format (one slide per line):
+# title|subtitle|duration_secs|bg_color
+# Example:
+# 5 Tiny Decor Upgrades|Under $20|3.0|#F3F1ED
+# If no file present, fall back to built-in slides below.
 
+SLIDES_FILE="metadata/slides.txt"
+SLIDE_OUTS=()
+if [ -f "${SLIDES_FILE}" ]; then
+  echo "Using slide definitions from ${SLIDES_FILE}" >>"$FFLOG"
+  i=1
+  while IFS= read -r line || [ -n "$line" ]; do
+    # skip empty and comment lines
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    IFS='|' read -r t1 t2 dur bg <<<"$line"
+    # fallback defaults if fields missing
+    t2="${t2:-}"
+    dur="${dur:-4.8}"
+    bg="${bg:-$BG1}"
+    out="${OUT_DIR}/s${i}.mp4"
+    make_slide "$t1" "$t2" "$dur" "$bg" "$out"
+    SLIDE_OUTS+=("$out")
+    i=$((i+1))
+  done < "${SLIDES_FILE}"
+else
+  echo "No ${SLIDES_FILE} found; using built-in slides" >>"$FFLOG"
+  make_slide "5 Tiny Decor Upgrades" "Under \$20" "${HOOK_D}" "${BG1}" "${OUT_DIR}/s1.mp4"
+  make_slide "Swap pillow covers" "Texture = luxe" "${TIP_D}" "${BG2}" "${OUT_DIR}/s2.mp4"
+  make_slide "Warm LED strips" "Ambient glow" "${TIP_D}" "${BG1}" "${OUT_DIR}/s3.mp4"
+  make_slide "Coffee table: Rule of 3" "Book + Candle + Vase" "${TIP_D}" "${BG2}" "${OUT_DIR}/s4.mp4"
+  make_slide "Matching frames" "Cohesive walls" "${TIP_D}" "${BG1}" "${OUT_DIR}/s5.mp4"
+  make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "${OUT_DIR}/s6.mp4"
+  make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
+  SLIDE_OUTS=("${OUT_DIR}/s1.mp4" "${OUT_DIR}/s2.mp4" "${OUT_DIR}/s3.mp4" "${OUT_DIR}/s4.mp4" "${OUT_DIR}/s5.mp4" "${OUT_DIR}/s6.mp4" "${OUT_DIR}/s7.mp4")
+fi
+
+# Build concat inputs.txt (absolute paths)
 cat >"${OUT_DIR}/inputs.txt" <<EOF
-file '${PWD}/${OUT_DIR}/s1.mp4'
-file '${PWD}/${OUT_DIR}/s2.mp4'
-file '${PWD}/${OUT_DIR}/s3.mp4'
-file '${PWD}/${OUT_DIR}/s4.mp4'
-file '${PWD}/${OUT_DIR}/s5.mp4'
-file '${PWD}/${OUT_DIR}/s6.mp4'
-file '${PWD}/${OUT_DIR}/s7.mp4'
+$(for p in "${SLIDE_OUTS[@]}"; do echo "file '${PWD}/${p}'"; done)
 EOF
 
 echo "Concatenating slides (fast copy)..." >>"$FFLOG"
@@ -136,6 +163,7 @@ if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/
   run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${OUT_DIR}/home-decor-short-temp.mp4"
 fi
 
+# Optional music mixing
 if [ -f "assets/music.mp3" ]; then
   echo "Mixing in background music..." >>"$FFLOG"
   DURATION=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "0")
@@ -170,14 +198,3 @@ run_ff -y -ss "${THUMB_TIME}" -i "${OUT_DIR}/home-decor-short.mp4" -frames:v 1 "
 echo "Done. Outputs in ${OUT_DIR}." | tee -a "$FFLOG"
 echo "Last lines of ffmpeg log:" | tee -a "$FFLOG"
 tail -n 50 "$FFLOG" || true
-EOF
-
-# make executable and test
-chmod +x scripts/render.sh
-bash -n scripts/render.sh || true
-
-# create branch and push
-git checkout -b fix/render-script-clean
-git add scripts/render.sh
-git commit -m "Fix: replace render script with sanitized bash-first implementation"
-git push -u origin fix/render-script-clean

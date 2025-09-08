@@ -1,81 +1,38 @@
 name: Render YouTube Short
-
 on:
   workflow_dispatch:
-    inputs:
-      watermark:
-        description: 'Custom watermark (optional)'
-        required: false
-        default: '@begumhomedecor'
-        type: string
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Install ffmpeg
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg
-        
-    - name: Verify ffmpeg installation
-      run: |
-        ffmpeg -version
-        ffprobe -version
-        
-    - name: Prepare fallback music (if assets/music.mp3 is missing)
-      run: |
-        mkdir -p assets
-        if [ ! -f assets/music.mp3 ]; then
-          ffmpeg -y -f lavfi -i "sine=frequency=480:duration=60,volume=0.2" -c:a libmp3lame -q:a 6 assets/music.mp3
-        fi
-        
-    - name: Make render script executable
-      run: chmod +x scripts/render.sh
-      
-    - name: Run render script
-      run: |
-        if [ -n "${{ github.event.inputs.watermark }}" ]; then
-          WATERMARK="${{ github.event.inputs.watermark }}" bash scripts/render.sh
-        else
-          bash scripts/render.sh
-        fi
-        
-    - name: List generated files
-      run: |
-        echo "Generated files:"
-        find out/ -type f -ls 2>/dev/null || echo "No files in out/ directory"
-        find captions/ -type f -ls 2>/dev/null || echo "No files in captions/ directory"
-        find metadata/ -type f -ls 2>/dev/null || echo "No files in metadata/ directory"
-        
-    - name: Upload video artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: youtube-short-video
-        path: |
-          out/home-decor-short.mp4
-          out/thumbnail.jpg
-        retention-days: 30
-        
-    - name: Upload captions
-      uses: actions/upload-artifact@v4
-      with:
-        name: youtube-short-captions
-        path: captions/
-        retention-days: 30
-        if-no-files-found: warn
-        
-    - name: Upload metadata
-      uses: actions/upload-artifact@v4
-      with:
-        name: youtube-short-metadata
-        path: |
-          metadata/title.txt
-          metadata/description.txt
-          metadata/hashtags.txt
-        retention-days: 30
-        if-no-files-found: warn
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Make script executable
+        run: chmod +x scripts/render.sh
+
+      - name: Run render script (debug enabled)
+        run: |
+          echo "Running render script on branch: $GITHUB_REF"
+          ls -la
+          bash -x scripts/render.sh
+
+      - name: List out directory before upload
+        run: |
+          echo "Out directory contents:"
+          ls -la out || true
+          echo "ffmpeg log (if any):"
+          sed -n '1,200p' out/ffmpeg.log || true
+
+      - name: Upload out artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: out
+          path: out/**
+          retention-days: 7
