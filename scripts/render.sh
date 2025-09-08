@@ -2,10 +2,10 @@
 set -euo pipefail
 set -x
 
-# Render script for home-decor-short
-# - CI-safe: no git operations performed here
-# - If metadata/slides.txt exists, slides are read from it (format below)
-# - Otherwise, falls back to built-in slides
+# Render script for home-decor-short (fixed parse error)
+# - CI-safe: no git operations
+# - Robust creation of inputs.txt (no nested $() for loop in heredoc)
+# - Reads metadata/slides.txt if present, otherwise uses built-in slides
 
 OUT_DIR="out"
 mkdir -p "$OUT_DIR"
@@ -114,24 +114,16 @@ make_slide() {
 }
 
 # If metadata/slides.txt exists, read slide definitions from it.
-# slides.txt format (one slide per line):
-# title|subtitle|duration_secs|bg_color
-# Example:
-# 5 Tiny Decor Upgrades|Under $20|3.0|#F3F1ED
-# If no file present, fall back to built-in slides below.
-
 SLIDES_FILE="metadata/slides.txt"
 SLIDE_OUTS=()
 if [ -f "${SLIDES_FILE}" ]; then
   echo "Using slide definitions from ${SLIDES_FILE}" >>"$FFLOG"
   i=1
   while IFS= read -r line || [ -n "$line" ]; do
-    # skip empty and comment lines
     case "$line" in
       ''|\#*) continue ;;
     esac
     IFS='|' read -r t1 t2 dur bg <<<"$line"
-    # fallback defaults if fields missing
     t2="${t2:-}"
     dur="${dur:-4.8}"
     bg="${bg:-$BG1}"
@@ -149,13 +141,14 @@ else
   make_slide "Matching frames" "Cohesive walls" "${TIP_D}" "${BG1}" "${OUT_DIR}/s5.mp4"
   make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "${OUT_DIR}/s6.mp4"
   make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
-  SLIDE_OUTS=("${OUT_DIR}/s1.mp4" "${OUT_DIR}/s2.mp4" "${OUT_DIR}/s3.mp4" "${OUT_DIR}/s4.mp4" "${OUT_DIR}/s5.mp4" "${OUT_DIR}/s6.mp4" "${OUT_DIR}/s7.mp4")
+  SLIDE_OUTS=( "${OUT_DIR}/s1.mp4" "${OUT_DIR}/s2.mp4" "${OUT_DIR}/s3.mp4" "${OUT_DIR}/s4.mp4" "${OUT_DIR}/s5.mp4" "${OUT_DIR}/s6.mp4" "${OUT_DIR}/s7.mp4" )
 fi
 
-# Build concat inputs.txt (absolute paths)
-cat >"${OUT_DIR}/inputs.txt" <<EOF
-$(for p in "${SLIDE_OUTS[@]}"; do echo "file '${PWD}/${p}'"; done)
-EOF
+# Write inputs.txt with a simple loop (robust and avoids parse issues)
+: > "${OUT_DIR}/inputs.txt"
+for p in "${SLIDE_OUTS[@]}"; do
+  echo "file '${PWD}/${p}'" >> "${OUT_DIR}/inputs.txt"
+done
 
 echo "Concatenating slides (fast copy)..." >>"$FFLOG"
 if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/home-decor-short-temp.mp4"; then
