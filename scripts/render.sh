@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
+# CI-safe render script for home-decor-short
+# - Avoids fragile heredocs/command substitutions that can trigger parse errors
+# - Writes inputs.txt via a simple loop (robust)
+# - Reads metadata/slides.txt if present, otherwise uses built-in slides
 set -euo pipefail
 set -x
-
-# Render script for home-decor-short (fixed parse error)
-# - CI-safe: no git operations
-# - Robust creation of inputs.txt (no nested $() for loop in heredoc)
-# - Reads metadata/slides.txt if present, otherwise uses built-in slides
 
 OUT_DIR="out"
 mkdir -p "$OUT_DIR"
@@ -16,6 +15,7 @@ FONT_BOLD="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 WATERMARK_DEFAULT="@begumhomedecor"
 WATERMARK="${WATERMARK:-$WATERMARK_DEFAULT}"
+# escape any single quotes for drawtext
 WATERMARK_ESC="${WATERMARK//\'/\\'}"
 
 HOOK_D=3.0
@@ -30,7 +30,7 @@ ACC="#CBB59B"
 
 fade_in="fade=t=in:st=0:d=0.35"
 
-err() { echo "ERROR: $*" >&2; }
+err() { printf 'ERROR: %s\n' "$*" >&2; }
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
   err "ffmpeg not found in PATH. Please install ffmpeg."
@@ -43,25 +43,25 @@ fi
 
 export FFREPORT="file=${OUT_DIR}/ffmpeg-report.log:level=32"
 FFLOG="${OUT_DIR}/ffmpeg.log"
-: >"$FFLOG"
+: > "$FFLOG"
 
 run_ff() {
-  echo "+ ffmpeg $*" >>"$FFLOG"
+  printf '+ ffmpeg %s\n' "$*" >>"$FFLOG"
   ffmpeg -hide_banner -loglevel verbose "$@" >>"$FFLOG" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
-    echo "ffmpeg exited with $rc (see ${FFLOG})" >&2
+    printf 'ffmpeg exited with %d (see %s)\n' "$rc" "$FFLOG" >&2
     return $rc
   fi
   return 0
 }
 
 if [ ! -f "${FONT_BOLD}" ]; then
-  echo "Warning: bold font not found at ${FONT_BOLD}, letting ffmpeg pick default." | tee -a "$FFLOG"
+  printf 'Warning: bold font not found at %s\n' "${FONT_BOLD}" | tee -a "$FFLOG"
   FONT_BOLD=""
 fi
 if [ ! -f "${FONT_REG}" ]; then
-  echo "Warning: regular font not found at ${FONT_REG}, letting ffmpeg pick default." | tee -a "$FFLOG"
+  printf 'Warning: regular font not found at %s\n' "${FONT_REG}" | tee -a "$FFLOG"
   FONT_REG=""
 fi
 
@@ -71,7 +71,6 @@ else
   draw_watermark="drawtext=text='${WATERMARK_ESC}':fontsize=36:fontcolor=black@0.55:bordercolor=white@0.7:borderw=2:x=w-tw-36:y=36"
 fi
 
-# make_slide: generates a single slide
 make_slide() {
   text1="$1"
   text2="$2"
@@ -79,7 +78,7 @@ make_slide() {
   bg="$4"
   outfile="$5"
 
-  # Escape single quotes
+  # escape single quotes for ffmpeg drawtext
   text1="${text1//\'/\\'}"
   text2="${text2//\'/\\'}"
 
@@ -89,7 +88,7 @@ make_slide() {
   if [ -n "${FONT_REG}" ]; then f2="fontfile=${FONT_REG}"; fi
 
   if [ -n "$f1" ]; then
-    line1="drawtext=$f1:text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
+    line1="drawtext=${f1}:text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
   else
     line1="drawtext=text='${text1}':fontsize=72:fontcolor=${FG}:x=(w-text_w)/2:y=(h/2-120):borderw=2:bordercolor=white@0.8"
   fi
@@ -107,17 +106,16 @@ make_slide() {
   st=$(awk -v d="$duration" 'BEGIN {printf "%.2f", d-0.35}')
   fade_out="fade=t=out:st=${st}:d=0.35"
 
-  echo "Generating slide: ${outfile} (duration=${duration}, bg=${bg})" >>"$FFLOG"
+  printf 'Generating slide: %s (duration=%s, bg=%s)\n' "$outfile" "$duration" "$bg" >>"$FFLOG"
   run_ff -y -f lavfi -i "color=c=${bg}:s=1080x1920:d=${duration}:r=${FPS}" \
     -vf "${line1}${line2},${bar},${draw_watermark},${fade_in},${fade_out}" \
-    -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${outfile}"
+    -c:v libx264 -pix_fmt yuv420p -r "${FPS}" "${outfile}"
 }
 
-# If metadata/slides.txt exists, read slide definitions from it.
 SLIDES_FILE="metadata/slides.txt"
 SLIDE_OUTS=()
 if [ -f "${SLIDES_FILE}" ]; then
-  echo "Using slide definitions from ${SLIDES_FILE}" >>"$FFLOG"
+  printf 'Using slide definitions from %s\n' "${SLIDES_FILE}" >>"$FFLOG"
   i=1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -130,10 +128,10 @@ if [ -f "${SLIDES_FILE}" ]; then
     out="${OUT_DIR}/s${i}.mp4"
     make_slide "$t1" "$t2" "$dur" "$bg" "$out"
     SLIDE_OUTS+=("$out")
-    i=$((i+1))
+    i=$((i + 1))
   done < "${SLIDES_FILE}"
 else
-  echo "No ${SLIDES_FILE} found; using built-in slides" >>"$FFLOG"
+  printf 'No %s found; using built-in slides\n' "${SLIDES_FILE}" >>"$FFLOG"
   make_slide "5 Tiny Decor Upgrades" "Under \$20" "${HOOK_D}" "${BG1}" "${OUT_DIR}/s1.mp4"
   make_slide "Swap pillow covers" "Texture = luxe" "${TIP_D}" "${BG2}" "${OUT_DIR}/s2.mp4"
   make_slide "Warm LED strips" "Ambient glow" "${TIP_D}" "${BG1}" "${OUT_DIR}/s3.mp4"
@@ -141,24 +139,23 @@ else
   make_slide "Matching frames" "Cohesive walls" "${TIP_D}" "${BG1}" "${OUT_DIR}/s5.mp4"
   make_slide "Greenery in a matte vase" "Finishes the look" "${TIP_D}" "${BG2}" "${OUT_DIR}/s6.mp4"
   make_slide "Follow for quick home glow-ups!" "" "${CTA_D}" "${BG1}" "${OUT_DIR}/s7.mp4"
-  SLIDE_OUTS=( "${OUT_DIR}/s1.mp4" "${OUT_DIR}/s2.mp4" "${OUT_DIR}/s3.mp4" "${OUT_DIR}/s4.mp4" "${OUT_DIR}/s5.mp4" "${OUT_DIR}/s6.mp4" "${OUT_DIR}/s7.mp4" )
+  SLIDE_OUTS=("${OUT_DIR}/s1.mp4" "${OUT_DIR}/s2.mp4" "${OUT_DIR}/s3.mp4" "${OUT_DIR}/s4.mp4" "${OUT_DIR}/s5.mp4" "${OUT_DIR}/s6.mp4" "${OUT_DIR}/s7.mp4")
 fi
 
-# Write inputs.txt with a simple loop (robust and avoids parse issues)
+# Build inputs.txt in a simple, robust loop to avoid parsing issues
 : > "${OUT_DIR}/inputs.txt"
 for p in "${SLIDE_OUTS[@]}"; do
-  echo "file '${PWD}/${p}'" >> "${OUT_DIR}/inputs.txt"
+  printf "file '%s'\n" "${PWD}/${p}" >> "${OUT_DIR}/inputs.txt"
 done
 
-echo "Concatenating slides (fast copy)..." >>"$FFLOG"
+printf 'Concatenating slides (fast copy)...\n' >>"$FFLOG"
 if ! run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c copy "${OUT_DIR}/home-decor-short-temp.mp4"; then
-  echo "Fast concat failed; falling back to re-encode concat (this is slower)..." >>"$FFLOG"
-  run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r ${FPS} "${OUT_DIR}/home-decor-short-temp.mp4"
+  printf 'Fast concat failed; falling back to re-encode concat (this is slower)...\n' >>"$FFLOG"
+  run_ff -y -f concat -safe 0 -i "${OUT_DIR}/inputs.txt" -c:v libx264 -pix_fmt yuv420p -r "${FPS}" "${OUT_DIR}/home-decor-short-temp.mp4"
 fi
 
-# Optional music mixing
 if [ -f "assets/music.mp3" ]; then
-  echo "Mixing in background music..." >>"$FFLOG"
+  printf 'Mixing in background music...\n' >>"$FFLOG"
   DURATION=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "${OUT_DIR}/home-decor-short-temp.mp4" || echo "0")
   if [ -z "${DURATION}" ] || [ "${DURATION}" = "0" ]; then
     err "Could not determine video duration, skipping music mixing."
@@ -188,6 +185,6 @@ fi
 
 run_ff -y -ss "${THUMB_TIME}" -i "${OUT_DIR}/home-decor-short.mp4" -frames:v 1 "${OUT_DIR}/thumbnail.jpg"
 
-echo "Done. Outputs in ${OUT_DIR}." | tee -a "$FFLOG"
-echo "Last lines of ffmpeg log:" | tee -a "$FFLOG"
+printf 'Done. Outputs in %s\n' "${OUT_DIR}" | tee -a "$FFLOG"
+printf 'Last lines of ffmpeg log:\n' | tee -a "$FFLOG"
 tail -n 50 "$FFLOG" || true

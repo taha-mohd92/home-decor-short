@@ -1,0 +1,16 @@
+# Ensure shell scripts use LF (important for CI bash parsing)
+*.sh text eol=lf
+scripts/* text eol=lf
+
+# YAML/workflow files should be LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown and plain text: normalize but allow platform-specific checkout
+*.md text=auto
+*.txt text=auto
+
+# Binary files (do not attempt to normalize)
+*.jpg binary
+*.png binary
+*.mp4 binary
